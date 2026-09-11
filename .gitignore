@@ -1,5 +1,12 @@
+# This repository is customer-facing: it publishes the Pack itself (default/,
+# data/, package.json, README.md) and nothing else. Authoring and build tooling
+# stays local and is never committed.
+tools/
+*.js
+*.py
+*.sh
+
 # Generated cut/paste configs for manual Cribl UI testing.
-# Regenerate with: python3 tools/render-conf.py
 conf/
 
 # Build artifacts

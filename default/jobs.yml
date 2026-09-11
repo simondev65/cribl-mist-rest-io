@@ -1,3 +1,15 @@
+# Collection window convention
+#
+# schedule.run.earliest / latest are typed as *numbers* (epoch seconds) in
+# Cribl's SavedJobCollection schema - "-15m" / "now" makes the whole Pack fail
+# AJV validation on load, which leaves the Pack registered but unloaded and every
+# Pack API call then throws "Cannot read properties of undefined (reading
+# 'handleClusterCall')". So the keys are omitted and timeRangeType stays relative.
+#
+# Each collector therefore builds its own window in collectRequestParams: the
+# first run looks back 15 minutes from now, and every run after that resumes from
+# state.latestTime. Same approach as the cribl-akamai-rest-io pack.
+
 in_mist_org_audit_logs:
   type: collection
   ttl: 4h
@@ -24,8 +36,6 @@ in_mist_org_audit_logs:
       logLevel: info
       jobTimeout: 10m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -54,9 +64,10 @@ in_mist_org_audit_logs:
           value: "'application/json'"
       collectRequestParams:
         - name: start
-          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+          value: "`${state && state.latestTime ? state.latestTime :
+            Math.round(Date.now() / 1000) - 900}`"
         - name: end
-          value: "`${latest}`"
+          value: "`${Math.round(Date.now() / 1000)}`"
         - name: sort
           value: "'timestamp'"
       # Page/Size pagination. Cribl's schema calls this type "request_page" and
@@ -143,8 +154,6 @@ in_mist_org_alarms:
       logLevel: info
       jobTimeout: 10m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -173,9 +182,10 @@ in_mist_org_alarms:
           value: "'application/json'"
       collectRequestParams:
         - name: start
-          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+          value: "`${state && state.latestTime ? state.latestTime :
+            Math.round(Date.now() / 1000) - 900}`"
         - name: end
-          value: "`${latest}`"
+          value: "`${Math.round(Date.now() / 1000)}`"
         - name: limit
           value: "`${C.vars['mist_page_limit']}`"
         - name: sort
@@ -256,8 +266,6 @@ in_mist_org_device_events:
       logLevel: info
       jobTimeout: 10m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -286,9 +294,10 @@ in_mist_org_device_events:
           value: "'application/json'"
       collectRequestParams:
         - name: start
-          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+          value: "`${state && state.latestTime ? state.latestTime :
+            Math.round(Date.now() / 1000) - 900}`"
         - name: end
-          value: "`${latest}`"
+          value: "`${Math.round(Date.now() / 1000)}`"
         - name: limit
           value: "`${C.vars['mist_page_limit']}`"
         - name: sort
@@ -369,8 +378,6 @@ in_mist_org_client_events:
       logLevel: info
       jobTimeout: 10m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -399,9 +406,10 @@ in_mist_org_client_events:
           value: "'application/json'"
       collectRequestParams:
         - name: start
-          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+          value: "`${state && state.latestTime ? state.latestTime :
+            Math.round(Date.now() / 1000) - 900}`"
         - name: end
-          value: "`${latest}`"
+          value: "`${Math.round(Date.now() / 1000)}`"
         - name: limit
           value: "`${C.vars['mist_page_limit']}`"
         - name: sort
@@ -483,8 +491,6 @@ in_mist_org_nac_client_events:
       logLevel: info
       jobTimeout: 10m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -517,9 +523,10 @@ in_mist_org_nac_client_events:
       # state tracking keeps the maximum _time it has seen.
       collectRequestParams:
         - name: start
-          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+          value: "`${state && state.latestTime ? state.latestTime :
+            Math.round(Date.now() / 1000) - 900}`"
         - name: end
-          value: "`${latest}`"
+          value: "`${Math.round(Date.now() / 1000)}`"
         - name: limit
           value: "`${C.vars['mist_page_limit']}`"
       pagination:
@@ -601,8 +608,6 @@ in_mist_org_device_inventory:
       logLevel: info
       jobTimeout: 20m
       timeRangeType: relative
-      earliest: -1h
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -717,8 +722,6 @@ in_mist_org_device_stats:
       logLevel: info
       jobTimeout: 20m
       timeRangeType: relative
-      earliest: -15m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"
@@ -830,8 +833,6 @@ in_mist_site_rogue_events:
       logLevel: info
       jobTimeout: 20m
       timeRangeType: relative
-      earliest: -30m
-      latest: now
       timestampTimezone: UTC
       timeWarning: {}
       expression: "true"

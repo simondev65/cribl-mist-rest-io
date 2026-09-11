@@ -1,0 +1,118 @@
+name: Release
+
+# Publishes the installable .crbl as a GitHub Release asset.
+#
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# The .crbl is deliberately NOT committed (see .gitignore). It is a gzipped tar, so
+# git would store a whole new opaque blob on every rebuild, and a committed copy has
+# nothing keeping it in step with default/ - it would silently go stale. A Release
+# asset is versioned, has a stable URL, and Cribl can install straight from it.
+#
+# The archive is built inline rather than by a script in the repo: this repository
+# publishes the Pack only, so no build tooling is committed here.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pyyaml
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Every default/**/*.yml must parse
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          paths = sorted(glob.glob('default/**/*.yml', recursive=True))
+          bad = 0
+          for path in paths:
+              try:
+                  yaml.safe_load(open(path))
+              except Exception as exc:
+                  bad += 1
+                  print(f'::error file={path}::{exc}')
+          print(f'checked {len(paths)} files')
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: package.json and default/pack.yml must agree
+        run: |
+          python3 - <<'PY'
+          import json, sys, yaml
+          pkg = json.load(open('package.json'))
+          pack = yaml.safe_load(open('default/pack.yml'))
+          fail = False
+          if pkg['name'] != pack['id']:
+              print(f"::error::name/id mismatch: {pkg['name']} != {pack['id']}"); fail = True
+          if pkg['version'] != pack['version']:
+              print(f"::error::version mismatch: {pkg['version']} != {pack['version']}"); fail = True
+          sys.exit(1 if fail else 0)
+          PY
+
+      # The pack must reference the Mist token via C.Secret only. Anything that
+      # looks like a literal token under default/ is a hard failure.
+      - name: No secrets committed
+        run: |
+          if grep -rnE "Token [A-Za-z0-9]{20,}" default/ ; then
+            echo "::error::a literal Mist API token appears in default/"
+            exit 1
+          fi
+          echo "ok - no literal tokens in default/"
+
+      # A tag that disagrees with package.json produces a Release whose asset
+      # installs under a different version than the tag claims. Fail instead.
+      - name: Tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG="$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')"
+          if [[ "$TAG" != "$PKG" ]]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "tag v$TAG matches package.json"
+
+      # ubuntu-latest ships GNU tar as `tar`. That matters: macOS/BSD tar writes
+      # extended pax headers and AppleDouble entries that Cribl's importer rejects.
+      # The <name>_<version>.crbl filename is what Cribl derives the pack id from.
+      - name: Build the .crbl
+        run: |
+          NAME="$(python3 -c 'import json;print(json.load(open("package.json"))["name"])')"
+          VERSION="$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')"
+          OUT="${NAME}_${VERSION}.crbl"
+          tar -czf "$OUT" \
+            --exclude '.DS_Store' \
+            --exclude '._*' \
+            package.json README.md default data
+          echo "built $OUT ($(du -h "$OUT" | cut -f1))"
+          tar -tzf "$OUT"
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crbl
+          path: "*.crbl"
+          if-no-files-found: error
+
+      - name: Attach to the Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.crbl"
+          generate_release_notes: true

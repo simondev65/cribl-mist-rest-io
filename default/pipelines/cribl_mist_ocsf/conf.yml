@@ -473,6 +473,9 @@ functions:
         - host
         - source
         - sourcetype
+        # Kept on the OCSF path too, so a destination can route on one field
+        # regardless of which output format the pack is set to.
+        - logtype
         - class_uid
         # mist_dataset, mist_org_id, mist_site_id, mist_site_name,
         # mist_device_type, mist_api_error

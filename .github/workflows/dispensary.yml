@@ -58,10 +58,26 @@ jobs:
           fi
           echo "ok - no literal tokens in default/"
 
-      - name: Offline dry run
+      # Route table sanity: both shaping Routes must ship disabled, and the
+      # pass-through backstop must ship enabled. Leaving a shaping Route on turns
+      # the pack's neutral default into a destination-specific one.
+      - name: Routes must ship in their default state
         run: |
-          node tools/simulate.js
-          node tools/simulate.js ocsf
+          python3 - <<'PY'
+          import sys, yaml
+          expected = {'mist_ocsf': True, 'mist_to_splunk': True,
+                      'mist_passthru': False, 'default': False}
+          routes = {r['id']: bool(r.get('disabled'))
+                    for r in yaml.safe_load(open('default/pipelines/route.yml'))['routes']}
+          fail = False
+          if set(routes) != set(expected):
+              print(f'::error::route ids changed: {sorted(routes)}'); fail = True
+          for rid, want in expected.items():
+              if rid in routes and routes[rid] != want:
+                  print(f'::error::route {rid} disabled={routes[rid]}, expected {want}'); fail = True
+          print('ok -', ', '.join(f'{k}={"disabled" if v else "enabled"}' for k, v in routes.items()))
+          sys.exit(1 if fail else 0)
+          PY
 
   release:
     needs: validate

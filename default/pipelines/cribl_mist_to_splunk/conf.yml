@@ -7,23 +7,46 @@ groups:
     index: 1
     disabled: false
 asyncFuncTimeout: 1000
-description: Enriched-JSON output path for Juniper Mist records. Emits the Mist
-  record as JSON in _raw with a minimal set of top-level routing fields.
+description: Splunk-shaped output path for Juniper Mist records. Emits the Mist
+  record as JSON in _raw with a flat sourcetype and a minimal set of top-level
+  routing fields.
 functions:
   - id: comment
     filter: "true"
     disabled: false
     conf:
       comment: |
-        Pipeline : cribl_mist_events
-        Purpose  : Default output path. Serializes the Mist record to JSON in
+        Pipeline : cribl_mist_to_splunk
+        Purpose  : Splunk-shaped output. Serializes the Mist record to JSON in
                    _raw and strips everything the destination does not need, so
                    the payload is identical whether it lands in Splunk HEC, an
                    S3/Lake object or an HTTP destination.
         Author   : Cribl SE - @sduchene
-        Updated  : 2026-09-09
+        Updated  : 2026-09-11
         Upstream : cribl_mist_parse (via each in_mist_* Collector)
+        Reached  : Route mist_to_splunk, which ships DISABLED. Enable it and set
+                   mist_output_format = 'splunk' to use this pipeline.
         Vars     : mist_splunk_index - value written to 'index'
+
+  # A single flat sourcetype for the whole vendor, which is what a Splunk TA-style
+  # index-time config expects. This deliberately OVERWRITES the per-dataset
+  # 'mist:<dataset>' sourcetype cribl_mist_parse sets - the dataset is still on the
+  # event (and inside the JSON) as mist_dataset, so nothing is lost. Disable this
+  # function if you would rather keep one sourcetype per dataset.
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: emit
+    description: "Flat Splunk sourcetype for every Mist dataset. Overrides the
+      per-dataset mist:<dataset> sourcetype set by cribl_mist_parse."
+    conf:
+      add:
+        # A quoted literal: Eval values are JS expressions, so bare juniper_mist
+        # would be an undefined identifier and would DELETE the field.
+        - name: sourcetype
+          value: "'juniper_mist'"
+      remove: []
+      keep: []
 
   - id: eval
     filter: C.vars['mist_splunk_index'] !== ''
@@ -81,6 +104,7 @@ functions:
         - host
         - source
         - sourcetype
+        - logtype
         - vendor
         - product
         # mist_dataset, mist_org_id, mist_site_id, mist_site_name,

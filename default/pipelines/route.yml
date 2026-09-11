@@ -1,7 +1,10 @@
 id: default
 groups: {}
 comments:
+  # 'index' is required by Cribl's RouteComment schema - it is the 0-based
+  # position of the Route the comment is pinned above.
   - id: mist_routing_note
+    index: 0
     comment: |
       Routing for the Juniper Mist pack.
 
@@ -9,22 +12,40 @@ comments:
       __packsource = 'cribl-mist-rest-io.mist-api' and with
       mist_dataset = <audit_logs|alarms|device_events|client_events|
       nac_client_events|device_inventory|device_stats|rogue_events|api_error>.
+      cribl_mist_parse then derives sourcetype, logtype and the org/site ids.
 
-      Route 1 fires only when the mist_output_format Variable is set to 'ocsf'
-      AND the dataset has a real OCSF 1.4 class. Route 2 catches every other
-      Mist event, so switching mist_output_format flips the output format for
-      the mappable datasets without leaving anything unrouted.
+      Out of the box BOTH shaping Routes (1 and 2) are DISABLED, so every Mist
+      event falls through to Route 3 and leaves the pack as cribl_mist_parse
+      produced it - enriched, unserialized, no destination-specific opinion.
+      That is the neutral default: the pack normalizes, you choose the shape.
 
-      Both routes are final, so exactly one fires per event.
+      Enabling a shape takes two deliberate steps, not one:
+        Splunk  -> enable Route 2 AND set mist_output_format = 'splunk'
+        OCSF    -> enable Route 1 AND set mist_output_format = 'ocsf'
+      Either half on its own is a no-op. The Routes filter on the Variable, and
+      the Variable has no effect while the Route is off.
+
+      Route 3 is NOT gated on the Variable, so it always catches any Mist event
+      the shaping Routes did not - including a half-finished switch. Nothing is
+      ever left unrouted.
+
+      All Mist routes are final, so exactly one fires per event, and Route 1
+      precedes Route 2: with both enabled the four OCSF-capable datasets go OCSF
+      and the rest go Splunk-shaped.
 routes:
   - id: mist_ocsf
     name: Mist to OCSF 1.4
     final: true
-    disabled: false
+    # Ships DISABLED. OCSF is opt-in: enabling it takes two deliberate steps,
+    # this toggle and mist_output_format = 'ocsf'. Setting the Variable alone
+    # changes nothing while this Route is off - every event keeps falling
+    # through to mist_passthru.
+    disabled: true
     pipeline: cribl_mist_ocsf
-    description: "OCSF 1.4 output for the datasets with a real OCSF class:
-      audit_logs (6003), alarms and rogue_events (2004), nac_client_events
-      (3002). Requires the mist_output_format Variable to be 'ocsf'."
+    description: "DISABLED BY DEFAULT. OCSF 1.4 output for the datasets with a
+      real OCSF class: audit_logs (6003), alarms and rogue_events (2004),
+      nac_client_events (3002). To use it, enable this Route AND set the
+      mist_output_format Variable to 'ocsf' - both are required."
     enableOutputExpression: false
     outputExpression: null
     filter: >-
@@ -34,14 +55,39 @@ routes:
     clones: []
     targetContext: group
     output: __group
-  - id: mist_json
-    name: Mist enriched JSON
+  - id: mist_to_splunk
+    name: Mist to Splunk
     final: true
+    # Ships DISABLED for the same reason as mist_ocsf: serializing to JSON with a
+    # flat 'juniper_mist' sourcetype and an index is a Splunk-specific opinion, so
+    # it should be a choice rather than the default.
+    disabled: true
+    pipeline: cribl_mist_to_splunk
+    description: "DISABLED BY DEFAULT. Splunk-shaped output - the Mist record as
+      JSON in _raw, sourcetype 'juniper_mist', index from the mist_splunk_index
+      Variable. To use it, enable this Route AND set the mist_output_format
+      Variable to 'splunk' - both are required."
+    enableOutputExpression: false
+    outputExpression: null
+    filter: >-
+      __packsource == 'cribl-mist-rest-io.mist-api' &&
+      C.vars['mist_output_format'] === 'splunk'
+    clones: []
+    targetContext: group
+    output: __group
+  - id: mist_passthru
+    name: Mist pass-through (default)
+    final: true
+    # The shipped behaviour. Deliberately NOT gated on mist_output_format: it is
+    # the backstop, so it must match every Mist event the two shaping Routes did
+    # not - including the case where someone sets the Variable but forgets to
+    # enable the matching Route.
     disabled: false
-    pipeline: cribl_mist_events
-    description: Enriched Mist JSON for every remaining Mist event - the default
-      output format, plus the datasets that have no OCSF class (device_events,
-      client_events, device_inventory, device_stats) and API error bodies.
+    pipeline: passthru
+    description: "ENABLED - this is what the pack does out of the box. Mist events
+      leave exactly as cribl_mist_parse produced them (enriched fields, original
+      _raw, no serialization), via the built-in 'passthru' pipeline. Enable
+      mist_to_splunk or mist_ocsf above to shape them instead."
     enableOutputExpression: false
     outputExpression: null
     filter: __packsource == 'cribl-mist-rest-io.mist-api'
@@ -52,8 +98,11 @@ routes:
     name: default
     final: true
     disabled: false
-    description: Pass-through for non-Mist events. No pipeline on purpose - a
-      catch-all Route must omit 'pipeline' rather than point at 'devnull'.
+    pipeline: passthru
+    description: Pass-through for non-Mist events. 'pipeline' is required by
+      Cribl's RouteConf schema, so this cannot be omitted - it uses the built-in
+      'passthru' pipeline (not 'devnull', which would discard the events) and
+      hands them back to the Worker Group via output __group.
     enableOutputExpression: false
     outputExpression: null
     filter: "true"

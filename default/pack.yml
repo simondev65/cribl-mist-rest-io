@@ -8,8 +8,9 @@ description: |
 
   Ships eight scheduled REST Collectors (org audit logs, alarms, device events,
   client events, NAC/802.1X client events, device inventory, device stats and
-  site rogue-AP events), a Mist-aware Event Breaker ruleset, and pipelines that
-  emit either enriched JSON or OCSF 1.4.
+  site rogue-AP events), a Mist-aware Event Breaker ruleset, and optional output
+  pipelines for Splunk-shaped JSON or OCSF 1.4. Both are off by default: the pack
+  collects and normalizes, and you choose the shape.
 minStreamVersion: 4.17.0
 dataTypes: [logs]
 useCases: [normalization, routing]

@@ -44,10 +44,14 @@ mist_output_format:
   type: string
   lib: custom
   label: "Output Format"
-  description: "'json' emits enriched Mist JSON. 'ocsf' emits OCSF 1.4 for the
-    datasets that map cleanly (audit_logs, alarms, nac_client_events,
-    rogue_events); every other dataset still emits enriched JSON."
-  value: "'json'"
+  description: "Which output shape to use. 'passthru' (default) emits the enriched
+    Mist record as cribl_mist_parse produced it. 'splunk' serializes it to JSON in
+    _raw with sourcetype 'juniper_mist' and an index. 'ocsf' emits OCSF 1.4 for the
+    four datasets that map cleanly (audit_logs, alarms, nac_client_events,
+    rogue_events). NOT sufficient on its own: 'splunk' and 'ocsf' also require you
+    to enable the matching Route (mist_to_splunk / mist_ocsf), both of which ship
+    disabled. Setting this alone changes nothing."
+  value: "'passthru'"
   tags: mist
 mist_splunk_index:
   type: string

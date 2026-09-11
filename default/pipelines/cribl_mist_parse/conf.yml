@@ -82,8 +82,8 @@ functions:
     filter: "true"
     disabled: false
     groupId: identity
-    description: Vendor/product identity, a per-dataset sourcetype, and the org
-      and site ids the rest of the pack routes on.
+    description: Vendor/product identity, a per-dataset sourcetype and logtype,
+      and the org and site ids the rest of the pack routes on.
     conf:
       add:
         - name: vendor
@@ -92,6 +92,24 @@ functions:
           value: "'Mist'"
         - name: sourcetype
           value: "`mist:${mist_dataset || 'unknown'}`"
+        # Short, stable dataset label for search-time filtering, derived here
+        # rather than as a fixed field on each Collector: logtype is a pure
+        # function of mist_dataset, so keeping the two together in one map is the
+        # only way they cannot drift, and every in_mist_* Collector runs this
+        # pipeline so the coverage is identical. Unmapped datasets (a collector
+        # you add yourself) fall back to 'mist_<dataset>'.
+        - name: logtype
+          value: |-
+            ({ audit_logs: 'mist_audit',
+               alarms: 'mist_alarms',
+               device_events: 'mist_device_events',
+               client_events: 'mist_client_events',
+               nac_client_events: 'mist_nac_client_events',
+               device_inventory: 'mist_inventory',
+               device_stats: 'mist_device_stats',
+               rogue_events: 'mist_rogue_events',
+               api_error: 'mist_api_error' })[mist_dataset]
+            || `mist_${mist_dataset || 'unknown'}`
         - name: source
           value: "`mist://${C.vars['mist_api_host']}`"
         - name: mist_org_id
