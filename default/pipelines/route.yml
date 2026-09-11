@@ -1,0 +1,62 @@
+id: default
+groups: {}
+comments:
+  - id: mist_routing_note
+    comment: |
+      Routing for the Juniper Mist pack.
+
+      Every in_mist_* Collector tags its events with
+      __packsource = 'cribl-mist-rest-io.mist-api' and with
+      mist_dataset = <audit_logs|alarms|device_events|client_events|
+      nac_client_events|device_inventory|device_stats|rogue_events|api_error>.
+
+      Route 1 fires only when the mist_output_format Variable is set to 'ocsf'
+      AND the dataset has a real OCSF 1.4 class. Route 2 catches every other
+      Mist event, so switching mist_output_format flips the output format for
+      the mappable datasets without leaving anything unrouted.
+
+      Both routes are final, so exactly one fires per event.
+routes:
+  - id: mist_ocsf
+    name: Mist to OCSF 1.4
+    final: true
+    disabled: false
+    pipeline: cribl_mist_ocsf
+    description: "OCSF 1.4 output for the datasets with a real OCSF class:
+      audit_logs (6003), alarms and rogue_events (2004), nac_client_events
+      (3002). Requires the mist_output_format Variable to be 'ocsf'."
+    enableOutputExpression: false
+    outputExpression: null
+    filter: >-
+      __packsource == 'cribl-mist-rest-io.mist-api' &&
+      C.vars['mist_output_format'] === 'ocsf' &&
+      ['audit_logs', 'alarms', 'rogue_events', 'nac_client_events'].indexOf(mist_dataset) >= 0
+    clones: []
+    targetContext: group
+    output: __group
+  - id: mist_json
+    name: Mist enriched JSON
+    final: true
+    disabled: false
+    pipeline: cribl_mist_events
+    description: Enriched Mist JSON for every remaining Mist event - the default
+      output format, plus the datasets that have no OCSF class (device_events,
+      client_events, device_inventory, device_stats) and API error bodies.
+    enableOutputExpression: false
+    outputExpression: null
+    filter: __packsource == 'cribl-mist-rest-io.mist-api'
+    clones: []
+    targetContext: group
+    output: __group
+  - id: default
+    name: default
+    final: true
+    disabled: false
+    description: Pass-through for non-Mist events. No pipeline on purpose - a
+      catch-all Route must omit 'pipeline' rather than point at 'devnull'.
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    clones: []
+    targetContext: group
+    output: __group

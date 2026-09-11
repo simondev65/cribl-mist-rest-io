@@ -1,0 +1,146 @@
+output: default
+streamtags: []
+groups:
+  errors:
+    name: API Errors
+    description: Surface Mist API error bodies instead of dropping them
+    index: 1
+    disabled: false
+  identity:
+    name: Time & Identity
+    description: _time, sourcetype, vendor/product, host and org/site ids
+    index: 2
+    disabled: false
+asyncFuncTimeout: 1000
+description: Pre-processing pipeline for every in_mist_* REST Collector. Sets
+  _time from the Mist epoch field, tags the dataset and sourcetype, and surfaces
+  Mist API error bodies.
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |
+        Pipeline : cribl_mist_parse
+        Purpose  : Pre-processing for all in_mist_* REST Collectors. Runs before
+                   the Routes, so every Mist record leaves here with _time,
+                   sourcetype, vendor/product and org/site identity set.
+        Author   : Cribl SE - @sduchene
+        Updated  : 2026-09-09
+        Inputs   : default/jobs.yml (8 collectors, each tagging mist_dataset)
+                   default/breakers.yml ("Juniper Mist API Ruleset")
+        Refs     : Mist API https://www.juniper.net/documentation/product/us/en/mist/
+
+  # --------------------------------------------------------------------------
+  # API errors. The breaker tags {"detail": "..."} bodies rather than trying to
+  # extract records from them. Keep them in the stream - a silently dropped 401
+  # or 429 looks identical to "no data".
+  # --------------------------------------------------------------------------
+  - id: eval
+    filter: mist_api_error === true
+    disabled: false
+    groupId: errors
+    description: Retag Mist API error bodies as their own dataset so they are
+      searchable and alertable downstream.
+    conf:
+      add:
+        - name: mist_dataset
+          value: "'api_error'"
+        - name: _time
+          value: "Date.now() / 1000"
+      remove: []
+      keep: []
+
+  # --------------------------------------------------------------------------
+  # Time. Mist epochs are seconds, often with sub-second precision.
+  #   timestamp                  event / log / alarm records
+  #   last_seen                  stats and inventory records
+  #   modified_time/created_time site and config objects
+  # --------------------------------------------------------------------------
+  - id: eval
+    filter: mist_api_error !== true
+    disabled: false
+    groupId: identity
+    description: "Set _time from the record's own Mist epoch field, falling back
+      through last_seen, modified_time and created_time to collection time."
+    conf:
+      add:
+        - name: _time
+          value: |-
+            Number(timestamp) > 0 ? Number(timestamp)
+            : Number(last_seen) > 0 ? Number(last_seen)
+            : Number(modified_time) > 0 ? Number(modified_time)
+            : Number(created_time) > 0 ? Number(created_time)
+            : Date.now() / 1000
+      remove: []
+      keep: []
+
+  # --------------------------------------------------------------------------
+  # Identity.
+  # --------------------------------------------------------------------------
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: identity
+    description: Vendor/product identity, a per-dataset sourcetype, and the org
+      and site ids the rest of the pack routes on.
+    conf:
+      add:
+        - name: vendor
+          value: "'Juniper'"
+        - name: product
+          value: "'Mist'"
+        - name: sourcetype
+          value: "`mist:${mist_dataset || 'unknown'}`"
+        - name: source
+          value: "`mist://${C.vars['mist_api_host']}`"
+        - name: mist_org_id
+          value: "org_id || C.vars['mist_org_id']"
+        - name: mist_site_id
+          value: "mist_site_id || site_id || null"
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: identity
+    description: "Best-effort host. Device inventory returns 'hostname' as an
+      array of aliases and alarms return 'hostnames'/'aps' arrays, so take the
+      first element; otherwise fall back through the MAC, the reporting AP, and
+      the admin who generated an audit entry."
+    conf:
+      add:
+        - name: host
+          value: |-
+            (Array.isArray(hostname) ? hostname[0] : hostname)
+            || (Array.isArray(hostnames) ? hostnames[0] : hostnames)
+            || last_hostname
+            || mac
+            || name
+            || ap
+            || (Array.isArray(aps) ? aps[0] : aps)
+            || (Array.isArray(switches) ? switches[0] : switches)
+            || admin_name
+            || mist_site_id
+            || 'mist'
+      remove: []
+      keep: []
+
+  # --------------------------------------------------------------------------
+  # Envelope cleanup. The breaker extracts elements of "results", so pagination
+  # metadata should not reach here - but strip the cursor fields defensively so
+  # a schema change upstream cannot leak a 4 KB search_after token per event.
+  # --------------------------------------------------------------------------
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: identity
+    description: Remove Mist pagination cursor fields if the response envelope
+      ever leaks into the extracted record.
+    conf:
+      add: []
+      remove:
+        - next
+        - search_after
+      keep: []

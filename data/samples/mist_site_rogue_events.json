@@ -1,0 +1,28 @@
+[
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"ap\":\"5c5b350e10030\",\"bssid\":\"38ff363c8c4c\",\"channel\":136,\"rssi\":-54,\"ssid\":\"MyHomeNetwork\",\"timestamp\":1538074612}",
+    "ap": "5c5b350e10030",
+    "bssid": "38ff363c8c4c",
+    "channel": 136,
+    "mist_dataset": "rogue_events",
+    "mist_site_id": "441a1214-6928-442a-8e92-e1d34b8ec6a6",
+    "mist_site_name": "Mist Office",
+    "rssi": -54,
+    "ssid": "MyHomeNetwork",
+    "timestamp": 1538074612
+  },
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"ap\":\"5c5b350e10030\",\"bssid\":\"60d02c2394cc\",\"channel\":11,\"rssi\":-59,\"ssid\":\"Home-Office\",\"timestamp\":1538074612}",
+    "ap": "5c5b350e10030",
+    "bssid": "60d02c2394cc",
+    "channel": 11,
+    "mist_dataset": "rogue_events",
+    "mist_site_id": "441a1214-6928-442a-8e92-e1d34b8ec6a6",
+    "mist_site_name": "Mist Office",
+    "rssi": -59,
+    "ssid": "Home-Office",
+    "timestamp": 1538074612
+  }
+]

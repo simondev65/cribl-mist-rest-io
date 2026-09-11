@@ -1,0 +1,72 @@
+Juniper Mist API Ruleset:
+  minRawLength: 256
+  description: Break Juniper Mist REST API responses into individual events.
+    Handles the {start,end,limit,total,next,results[]} search envelope, bare
+    JSON array responses (stats and list endpoints), and Mist API error bodies.
+  lib: custom
+  rules:
+    - name: Mist API Error
+      description: "Mist returns a bare {\"detail\": \"...\"} body for 4xx/5xx
+        (bad token, bad org id, throttled). Keep the payload as one event and
+        tag it so cribl_mist_parse can surface it instead of silently dropping
+        an authentication failure."
+      condition: '/^\s*\{\s*"detail"\s*:/.test(_raw)'
+      type: regex
+      disabled: false
+      parserEnabled: false
+      shouldUseDataRaw: false
+      eventBreakerRegex: /^\b$/
+      timestampAnchorRegex: /^/
+      timestamp:
+        type: current
+        length: 150
+      timestampTimezone: utc
+      timestampEarliest: -420weeks
+      timestampLatest: +1week
+      maxEventBytes: 51200
+      fields:
+        - name: mist_api_error
+          value: "true"
+    - name: Mist Search Envelope
+      description: "Search and list endpoints (/logs, /*/search) wrap records in
+        a \"results\" array alongside pagination metadata. Extract one event per
+        element and take the time from the record's own \"timestamp\" (epoch
+        seconds, may carry sub-second precision)."
+      condition: '_raw.indexOf(''"results"'') >= 0'
+      type: json_array
+      disabled: false
+      parserEnabled: false
+      shouldUseDataRaw: false
+      jsonExtractAll: true
+      jsonArrayField: results
+      jsonTimeField: timestamp
+      eventBreakerRegex: /[\n\r]+(?!\s)/
+      timestampAnchorRegex: /timestamp/
+      timestamp:
+        type: auto
+        length: 150
+      timestampTimezone: utc
+      timestampEarliest: -420weeks
+      timestampLatest: +1week
+      maxEventBytes: 1048576
+    - name: Mist Bare Array
+      description: "State and inventory endpoints (/orgs/<org>/stats/devices,
+        /orgs/<org>/sites) return a top-level JSON array with no envelope.
+        Leaving jsonArrayField unset makes each array element an event; these
+        records carry \"last_seen\" rather than \"timestamp\"."
+      condition: "true"
+      type: json_array
+      disabled: false
+      parserEnabled: false
+      shouldUseDataRaw: false
+      jsonExtractAll: true
+      jsonTimeField: last_seen
+      eventBreakerRegex: /[\n\r]+(?!\s)/
+      timestampAnchorRegex: /last_seen/
+      timestamp:
+        type: auto
+        length: 150
+      timestampTimezone: utc
+      timestampEarliest: -420weeks
+      timestampLatest: +1week
+      maxEventBytes: 4194304

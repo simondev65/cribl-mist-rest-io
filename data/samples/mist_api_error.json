@@ -1,0 +1,16 @@
+[
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"detail\":\"Authentication credentials were not provided.\"}",
+    "detail": "Authentication credentials were not provided.",
+    "mist_api_error": true,
+    "mist_dataset": "api_error"
+  },
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"detail\":\"Request was throttled. Expected available in 3600 seconds.\"}",
+    "detail": "Request was throttled. Expected available in 3600 seconds.",
+    "mist_api_error": true,
+    "mist_dataset": "api_error"
+  }
+]

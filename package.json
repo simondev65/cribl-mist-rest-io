@@ -1,0 +1,26 @@
+{
+  "name": "cribl-mist-rest-io",
+  "version": "1.0.0",
+  "minLogStreamVersion": "4.17.0",
+  "author": "Simon Duchene <sduchene@cribl.io>",
+  "license": "Apache-2.0",
+  "description": "Collector pack for the Juniper Mist Cloud REST API - audit logs, alarms, device/client/NAC events, rogue AP detections, inventory and device stats.",
+  "displayName": "Juniper Mist Rest Collector IO",
+  "keywords": [
+    "juniper",
+    "mist",
+    "wireless",
+    "nac",
+    "ocsf",
+    "rest"
+  ],
+  "engines": {
+    "cribl": ">=4.17.0"
+  },
+  "tags": {
+    "streamtags": [],
+    "dataType": ["logs"],
+    "useCase": ["normalization", "routing"]
+  },
+  "exports": []
+}

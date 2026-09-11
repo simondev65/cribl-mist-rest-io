@@ -1,0 +1,59 @@
+mist_api_host:
+  type: string
+  lib: custom
+  label: "Mist API Host"
+  description: "REQUIRED: hostname of your Mist cloud instance (no scheme, no
+    trailing slash). Global 01 api.mist.com | Global 02 api.gc1.mist.com |
+    Global 03 api.ac2.mist.com | Global 04 api.gc2.mist.com | Global 05
+    api.gc4.mist.com | EMEA 01 api.eu.mist.com | EMEA 02 api.gc3.mist.com |
+    EMEA 03 api.ac6.mist.com | EMEA 04 api.gc6.mist.com | APAC 01
+    api.ac5.mist.com | APAC 02 api.gc5.mist.com | APAC 03 api.gc7.mist.com"
+  value: "'api.mist.com'"
+  tags: mist
+mist_org_id:
+  type: string
+  lib: custom
+  label: "Mist Org ID"
+  description: "REQUIRED: your Mist Organization UUID. Find it in the Mist portal
+    URL (Organization > Settings) or via GET /api/v1/self."
+  value: "'YOUR_MIST_ORG_ID'"
+  tags: mist
+mist_page_limit:
+  type: string
+  lib: custom
+  label: "Page Size (limit)"
+  description: "Records per API request for the six collectors that pass 'limit'
+    as a request parameter. Mist caps most endpoints at 1000. Lower this if you
+    see 429s or request timeouts. Note: in_mist_org_audit_logs and
+    in_mist_org_device_stats use Page/Size pagination, whose Record limit is a
+    static number Cribl will not evaluate as an expression - change it on those
+    two collectors directly."
+  value: "'1000'"
+  tags: mist
+mist_lookback_seconds:
+  type: number
+  lib: custom
+  label: "Site Fan-out Lookback (seconds)"
+  description: "Collection window for the site-discovery collector
+    (in_mist_site_rogue_events), which does not use state tracking. Keep this
+    slightly larger than its cron interval to tolerate Mist indexing lag -
+    expect a small number of duplicate events at the window boundary."
+  value: "1200"
+  tags: mist
+mist_output_format:
+  type: string
+  lib: custom
+  label: "Output Format"
+  description: "'json' emits enriched Mist JSON. 'ocsf' emits OCSF 1.4 for the
+    datasets that map cleanly (audit_logs, alarms, nac_client_events,
+    rogue_events); every other dataset still emits enriched JSON."
+  value: "'json'"
+  tags: mist
+mist_splunk_index:
+  type: string
+  lib: custom
+  label: "Splunk Index"
+  description: "Value written to the 'index' field for Splunk-bound events. Set
+    to an empty string ('') to leave 'index' unset."
+  value: "'juniper_mist'"
+  tags: mist

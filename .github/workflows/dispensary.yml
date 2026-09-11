@@ -1,0 +1,92 @@
+name: Build Release
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pyyaml
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Every default/*.yml must parse
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          bad = 0
+          for path in sorted(glob.glob('default/**/*.yml', recursive=True)):
+              try:
+                  yaml.safe_load(open(path))
+              except Exception as exc:
+                  bad += 1
+                  print(f'::error file={path}::{exc}')
+          print(f'checked {len(glob.glob("default/**/*.yml", recursive=True))} files')
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: package.json and default/pack.yml must agree
+        run: |
+          python3 - <<'PY'
+          import json, sys, yaml
+          pkg = json.load(open('package.json'))
+          pack = yaml.safe_load(open('default/pack.yml'))
+          fail = False
+          if pkg['name'] != pack['id']:
+              print(f"::error::name/id mismatch: {pkg['name']} != {pack['id']}"); fail = True
+          if pkg['version'] != pack['version']:
+              print(f"::error::version mismatch: {pkg['version']} != {pack['version']}"); fail = True
+          sys.exit(1 if fail else 0)
+          PY
+
+      - name: No secrets committed
+        run: |
+          # The pack must reference the Mist token via C.Secret only. Anything
+          # that looks like a literal token in default/ is a hard failure.
+          if grep -rnE "Token [A-Za-z0-9]{20,}" default/ ; then
+            echo "::error::a literal Mist API token appears in default/"
+            exit 1
+          fi
+          echo "ok - no literal tokens in default/"
+
+      - name: Offline dry run
+        run: |
+          node tools/simulate.js
+          node tools/simulate.js ocsf
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get GitHub slug info
+        uses: rlespinasse/github-slug-action@3.5.1
+
+      # ubuntu-latest ships GNU tar as `tar`, so no gtar needed here. Locally,
+      # use tools/build-pack.sh - macOS/BSD tar produces archives Cribl rejects.
+      - name: Pack it up!
+        run: |
+          tar --exclude-vcs \
+              --exclude='./.github' \
+              --exclude='./tools' \
+              --exclude='./conf' \
+              --exclude='./.DS_Store' \
+              --exclude='*.crbl' \
+              -czf /tmp/${{ github.event.repository.name }}-${{ env.GITHUB_SHA_SHORT }}-${{ env.GITHUB_REF_SLUG_CS }}.crbl .
+
+      - name: Upload pack to Packs Dispensary
+        run: |
+          curl --fail --location '${{ vars.DISPENSARY_ENDPOINT }}/${{ github.event.repository.name }}' \
+            --header 'Authorization: Bearer ${{ secrets.PACKS_API_TOKEN }}' \
+            --form "file=@/tmp/${{ github.event.repository.name }}-${{ env.GITHUB_SHA_SHORT }}-${{ env.GITHUB_REF_SLUG_CS }}.crbl"

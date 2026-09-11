@@ -1,0 +1,88 @@
+output: default
+streamtags: []
+groups:
+  emit:
+    name: Serialize & Emit
+    description: JSON into _raw, then strict whitelist cleanup
+    index: 1
+    disabled: false
+asyncFuncTimeout: 1000
+description: Enriched-JSON output path for Juniper Mist records. Emits the Mist
+  record as JSON in _raw with a minimal set of top-level routing fields.
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |
+        Pipeline : cribl_mist_events
+        Purpose  : Default output path. Serializes the Mist record to JSON in
+                   _raw and strips everything the destination does not need, so
+                   the payload is identical whether it lands in Splunk HEC, an
+                   S3/Lake object or an HTTP destination.
+        Author   : Cribl SE - @sduchene
+        Updated  : 2026-09-09
+        Upstream : cribl_mist_parse (via each in_mist_* Collector)
+        Vars     : mist_splunk_index - value written to 'index'
+
+  - id: eval
+    filter: C.vars['mist_splunk_index'] !== ''
+    disabled: false
+    groupId: emit
+    description: "Target index for Splunk-bound events. Set mist_splunk_index to
+      an empty string to leave 'index' unset (S3/Lake/HTTP destinations)."
+    conf:
+      add:
+        - name: index
+          value: "C.vars['mist_splunk_index']"
+      remove: []
+      keep: []
+
+  # --------------------------------------------------------------------------
+  # Serialize. Exclusions first, '*' last - Cribl applies the field list in
+  # order, so a leading '*' would swallow the negations.
+  # The enrichment fields set by cribl_mist_parse (vendor, product, sourcetype,
+  # host, mist_*) deliberately stay INSIDE the JSON document so the payload is
+  # self-describing at rest.
+  # --------------------------------------------------------------------------
+  - id: serialize
+    filter: "true"
+    disabled: false
+    groupId: emit
+    description: Serialize the Mist record to a JSON document in _raw, excluding
+      Cribl internal fields and the previous _raw.
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_raw"
+        - "!__*"
+        - "!_*"
+        - "!cribl_*"
+        - "*"
+
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: emit
+    description: "Strict whitelist - emit _raw plus the routing and identity
+      fields only. Wildcard removes run before keep, so keep wins."
+    conf:
+      add: []
+      remove:
+        - "*"
+        - "__*"
+        - "_*"
+        - "cribl_*"
+      keep:
+        - _raw
+        - _time
+        - index
+        - host
+        - source
+        - sourcetype
+        - vendor
+        - product
+        # mist_dataset, mist_org_id, mist_site_id, mist_site_name,
+        # mist_device_type, mist_api_error
+        - mist_*

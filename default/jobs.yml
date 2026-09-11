@@ -1,0 +1,948 @@
+in_mist_org_audit_logs:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Org admin audit trail - GET /api/v1/orgs/<org_id>/logs. Who
+    changed what in the Mist portal/API. Uses page/limit pagination (this
+    endpoint accepts a 'page' parameter; the /search endpoints do not)."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/5 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 10m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: true
+        stateUpdateExpression: "__timestampExtracted !== false && { latestTime:
+          (state.latestTime || 0) > _time ? state.latestTime : _time }"
+        stateMergeExpression: "(prevState.latestTime || 0) > newState.latestTime
+          ? prevState : newState"
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/logs`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: start
+          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+        - name: end
+          value: "`${latest}`"
+        - name: sort
+          value: "'timestamp'"
+      # Page/Size pagination. Cribl's schema calls this type "request_page" and
+      # names the fields pageField/page/sizeField/size - none of them accept a
+      # JS expression, so the record limit is a literal here rather than
+      # C.vars['mist_page_limit'].
+      pagination:
+        type: request_page
+        pageField: page
+        page: 1
+        sizeField: limit
+        size: 1000
+        zeroIndexed: false
+        totalRecordField: total
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'audit_logs'"
+  savedState: {}
+  notifications: []
+
+in_mist_org_alarms:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Alarms across every site in the org - GET
+    /api/v1/orgs/<org_id>/alarms/search. One request covers all sites, so this
+    replaces per-site fan-out and stays well inside the 5000 calls/hour token
+    budget."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/5 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 10m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: true
+        stateUpdateExpression: "__timestampExtracted !== false && { latestTime:
+          (state.latestTime || 0) > _time ? state.latestTime : _time }"
+        stateMergeExpression: "(prevState.latestTime || 0) > newState.latestTime
+          ? prevState : newState"
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/alarms/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: start
+          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+        - name: end
+          value: "`${latest}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+        - name: sort
+          value: "'timestamp'"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'alarms'"
+  savedState: {}
+  notifications: []
+
+in_mist_org_device_events:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "AP / switch / gateway events across the org - GET
+    /api/v1/orgs/<org_id>/devices/events/search. High volume on large estates -
+    add a 'device_type' or 'type' collect parameter to narrow it."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/5 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 10m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: true
+        stateUpdateExpression: "__timestampExtracted !== false && { latestTime:
+          (state.latestTime || 0) > _time ? state.latestTime : _time }"
+        stateMergeExpression: "(prevState.latestTime || 0) > newState.latestTime
+          ? prevState : newState"
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/devices/events/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: start
+          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+        - name: end
+          value: "`${latest}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+        - name: sort
+          value: "'timestamp'"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'device_events'"
+  savedState: {}
+  notifications: []
+
+in_mist_org_client_events:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Wireless client events across the org - GET
+    /api/v1/orgs/<org_id>/clients/events/search. Association, DHCP, DNS, roaming
+    and 802.11 failure events. The highest-volume dataset in this pack."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/5 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 10m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: true
+        stateUpdateExpression: "__timestampExtracted !== false && { latestTime:
+          (state.latestTime || 0) > _time ? state.latestTime : _time }"
+        stateMergeExpression: "(prevState.latestTime || 0) > newState.latestTime
+          ? prevState : newState"
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/clients/events/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: start
+          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+        - name: end
+          value: "`${latest}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+        - name: sort
+          value: "'timestamp'"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'client_events'"
+  savedState: {}
+  notifications: []
+
+in_mist_org_nac_client_events:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Mist Access Assurance (NAC) client events - GET
+    /api/v1/orgs/<org_id>/nac_clients/events/search. 802.1X / MAB authentication
+    outcomes, matched NAC rules, IdP roles and RADIUS response attributes. The
+    most security-relevant dataset here."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/5 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 10m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: true
+        stateUpdateExpression: "__timestampExtracted !== false && { latestTime:
+          (state.latestTime || 0) > _time ? state.latestTime : _time }"
+        stateMergeExpression: "(prevState.latestTime || 0) > newState.latestTime
+          ? prevState : newState"
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/nac_clients/events/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      # No 'sort' parameter here on purpose: unlike the other search endpoints
+      # this one defaults to sort=wxid, and 'timestamp' is not a documented sort
+      # key for it. Ordering does not matter - start/end bound the window and
+      # state tracking keeps the maximum _time it has seen.
+      collectRequestParams:
+        - name: start
+          value: "`${state && state.latestTime ? state.latestTime : earliest}`"
+        - name: end
+          value: "`${latest}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'nac_client_events'"
+  savedState: {}
+  notifications: []
+
+in_mist_org_device_inventory:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Managed device inventory snapshot - GET
+    /api/v1/orgs/<org_id>/devices/search. Model, MAC/SKU, firmware version, site
+    assignment and LLDP neighbour per AP/switch/gateway. The endpoint's 'type'
+    parameter has no 'all' value (enum: ap, gateway, switch), so this collector
+    uses Item List discovery to issue one request per device type. State data,
+    not an event stream, so no state tracking - each run is a full snapshot."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "17 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: false
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 20m
+      timeRangeType: relative
+      earliest: -1h
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: false
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: list
+        itemList:
+          - ap
+          - switch
+          - gateway
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/devices/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: type
+          value: "`${id}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+        - name: sort
+          value: "'timestamp'"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'device_inventory'"
+      - name: mist_device_type
+        value: "`${id}`"
+  savedState: {}
+  notifications: []
+
+in_mist_org_device_stats:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Device health / radio / port statistics snapshot - GET
+    /api/v1/orgs/<org_id>/stats/devices. This is the org-wide equivalent of the
+    per-site 'AP stats' endpoint, so no site fan-out is needed. Returns a bare
+    JSON array (no 'results' envelope) with page/limit pagination, and the
+    records are large - narrow them with the 'fields' parameter before enabling
+    on a big estate."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/15 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: false
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 20m
+      timeRangeType: relative
+      earliest: -15m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      stateTracking:
+        enabled: false
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: none
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['mis\
+        t_org_id']}/stats/devices`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      collectRequestParams:
+        - name: type
+          value: "'all'"
+        - name: status
+          value: "'all'"
+      # Page/Size ("request_page"). Capped at 100 pages x 100 records because
+      # these records are large - see the note in the description.
+      pagination:
+        type: request_page
+        pageField: page
+        page: 1
+        sizeField: limit
+        size: 100
+        zeroIndexed: false
+        maxPages: 100
+      authentication: none
+      timeout: 120
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: true
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'device_stats'"
+  savedState: {}
+  notifications: []
+
+in_mist_site_rogue_events:
+  type: collection
+  ttl: 4h
+  ignoreGroupJobsLimit: false
+  removeFields: []
+  resumeOnBoot: false
+  description: "Rogue AP / honeypot / neighbour detections - GET
+    /api/v1/sites/<site_id>/rogues/events/search. This endpoint is site-scoped
+    only (there is no org-level equivalent), so it uses HTTP Discovery against
+    /api/v1/orgs/<org_id>/sites to enumerate every site and issues one Collect
+    task per site. Use this collector as the template for any other site-scoped
+    Mist endpoint. Note the request budget: one discovery call plus one call per
+    site per run, against a 5000 calls/hour token limit."
+  streamtags:
+    - juniper
+    - mist
+  workerAffinity: false
+  schedule:
+    enabled: false
+    cronSchedule: "*/15 * * * *"
+    maxConcurrentRuns: 1
+    skippable: true
+    resumeMissed: false
+    run:
+      mode: run
+      rescheduleDroppedTasks: true
+      maxTaskReschedule: 1
+      logLevel: info
+      jobTimeout: 20m
+      timeRangeType: relative
+      earliest: -30m
+      latest: now
+      timestampTimezone: UTC
+      timeWarning: {}
+      expression: "true"
+      minTaskSize: 1MB
+      maxTaskSize: 10MB
+      discoverToRoutes: false
+      stateTracking:
+        enabled: false
+  collector:
+    type: rest
+    destructive: false
+    encoding: utf8
+    conf:
+      discovery:
+        discoverType: http
+        discoverUrl: "`https://${C.vars['mist_api_host']}/api/v1/orgs/${C.vars['\
+          mist_org_id']}/sites`"
+        discoverMethod: get
+        discoverRequestHeaders:
+          - name: Authorization
+            value: "`Token ${C.Secret('mist_api_token').value}`"
+          - name: Accept
+            value: "'application/json'"
+        discoverRequestParams:
+          - name: limit
+            value: "'1000'"
+        discoverDataField: ""
+        pagination:
+          type: request_page
+          pageField: page
+          page: 1
+          sizeField: limit
+          size: 1000
+          zeroIndexed: false
+          maxPages: 10
+      collectUrl: "`https://${C.vars['mist_api_host']}/api/v1/sites/${id}/rogues\
+        /events/search`"
+      collectMethod: get
+      collectRequestHeaders:
+        - name: Authorization
+          value: "`Token ${C.Secret('mist_api_token').value}`"
+        - name: Accept
+          value: "'application/json'"
+      # No 'type' filter, so all four rogue classes (honeypot, lan, others,
+      # spoof) are collected. Mist does NOT echo the class back in the response
+      # - a rogue event is only {ap, bssid, ssid, channel, rssi, timestamp} - so
+      # cribl_mist_ocsf cannot derive severity from it. If you need per-class
+      # severity, clone this collector, add type=<class> here, and add a
+      # matching mist_rogue_type entry under input.metadata below.
+      collectRequestParams:
+        - name: start
+          value: "`${Math.round(Date.now() / 1000) - C.vars['mist_lookback_secon\
+            ds']}`"
+        - name: end
+          value: "`${Math.round(Date.now() / 1000)}`"
+        - name: limit
+          value: "`${C.vars['mist_page_limit']}`"
+        - name: sort
+          value: "'timestamp'"
+      pagination:
+        type: response_body
+        attribute:
+          - next
+        lastPageExpr: "!next"
+        maxPages: 0
+      authentication: none
+      timeout: 60
+      useRoundRobinDns: false
+      disableTimeFilter: true
+      decodeUrl: false
+      rejectUnauthorized: true
+      captureHeaders: false
+      stopOnEmptyResults: false
+      safeHeaders: []
+      retryRules:
+        type: backoff
+        interval: 1000
+        limit: 5
+        multiplier: 2
+        maxIntervalMs: 60000
+        codes:
+          - 429
+          - 500
+          - 502
+          - 503
+          - 504
+        enableHeader: true
+        retryConnectTimeout: false
+        retryConnectReset: false
+        retryHeaderName: retry-after
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Juniper Mist API Ruleset
+    pipeline: cribl_mist_parse
+    output: default
+    metadata:
+      - name: __packsource
+        value: "'cribl-mist-rest-io.mist-api'"
+      - name: mist_dataset
+        value: "'rogue_events'"
+      # The discovery result object is a Mist site: {id, name, org_id, ...}.
+      # Rogue events themselves carry no site_id, so stamp it here.
+      - name: mist_site_id
+        value: "`${__collectible.id}`"
+      - name: mist_site_name
+        value: "`${__collectible.name}`"
+  savedState: {}
+  notifications: []

@@ -1,0 +1,12 @@
+# This pack defines no Destinations of its own.
+#
+# Every Route in default/pipelines/route.yml uses output: __group with
+# targetContext: group, which means "hand the event back to the Worker Group's
+# own Routes / Destinations". That keeps the pack portable - you point it at
+# Splunk, S3, Cribl Lake or an HTTP endpoint from the Worker Group, without
+# editing the pack.
+#
+# If you do want a pack-local Destination, add it here and change the matching
+# Route's output/targetContext. Note that custom Parquet schemas and Amazon
+# Security Lake Destinations are not supported inside a Pack.
+outputs: {}

@@ -1,0 +1,479 @@
+output: default
+streamtags: []
+groups:
+  base:
+    name: 1 - OCSF Base
+    description: metadata, time, severity - common to every class
+    index: 1
+    disabled: false
+  classes:
+    name: 2 - Class Mapping
+    description: One Eval per Mist dataset, mutually exclusive filters
+    index: 2
+    disabled: false
+  emit:
+    name: 3 - Serialize & Emit
+    description: JSON.stringify the scratch object, then whitelist
+    index: 3
+    disabled: false
+asyncFuncTimeout: 1000
+description: Maps Juniper Mist records to OCSF 1.4. audit_logs to 6003 API
+  Activity, alarms and rogue_events to 2004 Detection Finding, nac_client_events
+  to 3002 Authentication. Any other dataset falls through to enriched JSON.
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |
+        Pipeline : cribl_mist_ocsf
+        Purpose  : OCSF 1.4 normalization for the Mist datasets that map to a
+                   real OCSF class. Builds a __ocsf scratch object through
+                   chained Evals, then JSON.stringify's it into _raw.
+        Author   : Cribl SE - @sduchene
+        Updated  : 2026-09-09
+        Upstream : cribl_mist_parse (via each in_mist_* Collector)
+        Mapping  : audit_logs        -> 6003 API Activity        (category 6)
+                   alarms            -> 2004 Detection Finding   (category 2)
+                   rogue_events      -> 2004 Detection Finding   (category 2)
+                   nac_client_events -> 3002 Authentication       (category 3)
+                   everything else   -> enriched Mist JSON (no OCSF class)
+        Note     : Cribl expressions reject nested lexical scopes, so there are
+                   no arrow functions / .map() / IIFEs here - only chained
+                   ternaries, object literals and Object.assign.
+        Refs     : https://schema.ocsf.io/1.4.0/
+
+  # ==========================================================================
+  # 1 - Base envelope
+  # ==========================================================================
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: base
+    description: "Severity id from the Mist 'severity' string. Datasets without
+      a severity field fall through to 1 (Informational)."
+    conf:
+      add:
+        - name: __sev_id
+          value: |-
+            String(severity).toLowerCase() === 'critical' ? 5
+            : String(severity).toLowerCase() === 'high' ? 4
+            : String(severity).toLowerCase() === 'warn' ? 3
+            : String(severity).toLowerCase() === 'medium' ? 3
+            : String(severity).toLowerCase() === 'low' ? 2
+            : 1
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: base
+    description: OCSF base object - time in milliseconds, severity, metadata and
+      the Mist product block. Class-specific Evals extend this with
+      Object.assign.
+    conf:
+      add:
+        - name: __ocsf
+          value: |-
+            ({
+              time: Math.round(_time * 1000),
+              severity_id: __sev_id,
+              severity: ({'1':'Informational','2':'Low','3':'Medium','4':'High','5':'Critical'})[String(__sev_id)],
+              metadata: {
+                version: '1.4.0',
+                profiles: ['cloud'],
+                logged_time: Date.now(),
+                original_time: String(timestamp || last_seen || ''),
+                uid: id ? String(id) : undefined,
+                log_name: mist_dataset,
+                log_provider: 'Juniper Mist',
+                product: {
+                  vendor_name: 'Juniper',
+                  name: 'Mist',
+                  feature: { name: mist_dataset }
+                }
+              },
+              cloud: { provider: 'Juniper Mist' },
+              unmapped: {
+                org_id: mist_org_id,
+                site_id: mist_site_id,
+                mist_api_host: C.vars['mist_api_host']
+              }
+            })
+      remove: []
+      keep: []
+
+  # ==========================================================================
+  # 2 - Class mapping. Filters are mutually exclusive on mist_dataset.
+  # ==========================================================================
+
+  # --- audit_logs -> 6003 API Activity --------------------------------------
+  # Mist audit entries are free-text ("Updated Site ..."), so the CRUD activity
+  # is inferred from the message and defaults to 99 (Other) rather than being
+  # guessed wrong.
+  - id: eval
+    filter: mist_dataset === 'audit_logs'
+    disabled: false
+    groupId: classes
+    description: "OCSF 6003 API Activity - Mist portal / API administrative
+      actions from /orgs/<org>/logs."
+    conf:
+      add:
+        - name: __act_id
+          value: |-
+            /\b(create|created|add|added|claim|claimed|invite|invited)\b/i.test(String(message)) ? 1
+            : /\b(delete|deleted|remove|removed|release|released|revoke|revoked)\b/i.test(String(message)) ? 4
+            : /\b(update|updated|modify|modified|change|changed|assign|assigned|restart|restarted|upgrade|upgraded)\b/i.test(String(message)) ? 3
+            : /\b(access|accessed|view|viewed|download|downloaded|export|exported|login|logged in)\b/i.test(String(message)) ? 2
+            : 99
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: mist_dataset === 'audit_logs'
+    disabled: false
+    groupId: classes
+    conf:
+      add:
+        - name: __ocsf
+          value: |-
+            Object.assign({}, __ocsf, {
+              category_uid: 6,
+              category_name: 'Application Activity',
+              class_uid: 6003,
+              class_name: 'API Activity',
+              activity_id: __act_id,
+              activity_name: ({'1':'Create','2':'Read','3':'Update','4':'Delete','99':'Other'})[String(__act_id)],
+              type_uid: 600300 + __act_id,
+              status_id: 1,
+              status: 'Success',
+              message: message,
+              api: {
+                operation: String(message || 'unknown'),
+                service: { name: 'Juniper Mist Cloud API' }
+              },
+              actor: {
+                user: {
+                  name: admin_name || 'unknown',
+                  uid: admin_id || admin_name || 'unknown',
+                  type_id: 2,
+                  type: 'Admin'
+                }
+              },
+              src_endpoint: { ip: src_ip || null },
+              unmapped: Object.assign({}, __ocsf.unmapped, {
+                mist_log_id: id,
+                for_site: for_site,
+                before: before,
+                after: after
+              })
+            })
+      remove: []
+      keep: []
+
+  # --- alarms -> 2004 Detection Finding -------------------------------------
+  - id: eval
+    filter: mist_dataset === 'alarms'
+    disabled: false
+    groupId: classes
+    description: "OCSF 2004 Detection Finding - Mist org alarms. Acknowledged or
+      resolved alarms become activity 2 (Update); everything else is a new
+      finding."
+    conf:
+      add:
+        - name: __act_id
+          value: "acked === true || String(status).toLowerCase() === 'resolved' ? 2 : 1"
+        - name: __status_id
+          value: |-
+            String(status).toLowerCase() === 'resolved' ? 4
+            : acked === true ? 2
+            : 1
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: mist_dataset === 'alarms'
+    disabled: false
+    groupId: classes
+    conf:
+      add:
+        - name: __ocsf
+          value: |-
+            Object.assign({}, __ocsf, {
+              category_uid: 2,
+              category_name: 'Findings',
+              class_uid: 2004,
+              class_name: 'Detection Finding',
+              activity_id: __act_id,
+              activity_name: __act_id === 2 ? 'Update' : 'Create',
+              type_uid: 200400 + __act_id,
+              status_id: __status_id,
+              status: ({'1':'New','2':'In Progress','3':'Suppressed','4':'Resolved'})[String(__status_id)],
+              status_detail: status || (acked === true ? 'acknowledged' : 'open'),
+              count: Number(count) > 0 ? Number(count) : 1,
+              message: `Mist ${severity || 'unknown'} alarm: ${type || 'unknown'}${component ? ' on ' + component : ''}`,
+              finding_info: {
+                uid: String(id || ''),
+                title: `Mist alarm: ${type || 'unknown'}`,
+                types: group ? [String(group)] : [],
+                first_seen_time: Math.round(Number(timestamp || 0) * 1000),
+                last_seen_time: Math.round(Number(last_seen || timestamp || 0) * 1000),
+                src_url: `https://manage.${C.vars['mist_api_host'].replace(/^api\./, '')}/admin/?org_id=${mist_org_id}`
+              },
+              unmapped: Object.assign({}, __ocsf.unmapped, {
+                mist_alarm_type: type,
+                mist_alarm_group: group,
+                component: component,
+                acked: acked,
+                acked_time: acked_time,
+                ack_admin_id: ack_admin_id,
+                ack_admin_name: ack_admin_name,
+                resolved_time: resolved_time,
+                note: note,
+                aps: aps,
+                bssids: bssids,
+                ssids: ssids,
+                switches: switches,
+                gateways: gateways,
+                hostnames: hostnames
+              })
+            })
+      remove: []
+      keep: []
+
+  # --- rogue_events -> 2004 Detection Finding -------------------------------
+  # A Mist rogue event is only {ap, bssid, ssid, channel, rssi, timestamp} - the
+  # rogue class (honeypot | lan | others | spoof) is a REQUEST filter and is not
+  # echoed in the response. So severity defaults to 3 (Medium) and is only
+  # sharpened when a cloned collector stamps mist_rogue_type as metadata. See
+  # the comment on in_mist_site_rogue_events in default/jobs.yml.
+  - id: eval
+    filter: mist_dataset === 'rogue_events'
+    disabled: false
+    groupId: classes
+    description: "OCSF 2004 Detection Finding - rogue AP detections. Mist sends
+      no severity on these, so it is derived from mist_rogue_type when present
+      and otherwise defaults to Medium."
+    conf:
+      add:
+        - name: __sev_id
+          value: |-
+            /honeypot|spoof/i.test(String(mist_rogue_type)) ? 4
+            : /others/i.test(String(mist_rogue_type)) ? 2
+            : 3
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: mist_dataset === 'rogue_events'
+    disabled: false
+    groupId: classes
+    conf:
+      add:
+        - name: __ocsf
+          value: |-
+            Object.assign({}, __ocsf, {
+              category_uid: 2,
+              category_name: 'Findings',
+              class_uid: 2004,
+              class_name: 'Detection Finding',
+              activity_id: 1,
+              activity_name: 'Create',
+              type_uid: 200401,
+              status_id: 1,
+              status: 'New',
+              severity_id: __sev_id,
+              severity: ({'1':'Informational','2':'Low','3':'Medium','4':'High','5':'Critical'})[String(__sev_id)],
+              message: `Rogue AP detected on ${ssid || bssid || 'unknown SSID'} (channel ${channel}, rssi ${rssi})`,
+              finding_info: {
+                uid: `${mist_site_id || 'site'}:${bssid || 'unknown'}:${Math.round(Number(timestamp || 0))}`,
+                title: mist_rogue_type ? `Rogue AP: ${mist_rogue_type}` : 'Rogue AP detected',
+                types: ['Rogue Access Point'],
+                first_seen_time: Math.round(Number(timestamp || 0) * 1000),
+                last_seen_time: Math.round(Number(timestamp || 0) * 1000)
+              },
+              src_endpoint: {
+                mac: bssid || null,
+                svc_name: ssid || null
+              },
+              device: {
+                mac: ap || null,
+                hostname: ap || null,
+                type: 'Wireless Access Point'
+              },
+              unmapped: Object.assign({}, __ocsf.unmapped, {
+                mist_rogue_type: mist_rogue_type || null,
+                site_name: mist_site_name || null,
+                channel: channel,
+                rssi: rssi,
+                reporting_ap: ap
+              })
+            })
+      remove: []
+      keep: []
+
+  # --- nac_client_events -> 3002 Authentication -----------------------------
+  # Mist Access Assurance event types are upper-snake, e.g.
+  # NAC_CLIENT_PERMIT, NAC_CLIENT_DENY, NAC_CLIENT_IDP_AUTH_FAILURE.
+  - id: eval
+    filter: mist_dataset === 'nac_client_events'
+    disabled: false
+    groupId: classes
+    description: "OCSF 3002 Authentication - Mist Access Assurance (NAC)
+      802.1X / MAB outcomes. Session teardown events map to Logoff."
+    conf:
+      add:
+        - name: __act_id
+          value: "/LOGOUT|DISCONNECT|SESSION_STOP|COA_/i.test(String(type)) ? 2 : 1"
+        - name: __status_id
+          value: |-
+            /PERMIT|SUCCESS|ALLOW|GRANTED/i.test(String(type)) ? 1
+            : /DENY|DENIED|FAIL|FAILURE|REJECT|BLOCK|TIMEOUT|ERROR/i.test(String(type)) ? 2
+            : 0
+        - name: __sev_id
+          value: |-
+            /DENY|DENIED|FAIL|FAILURE|REJECT|BLOCK/i.test(String(type)) ? 3 : 1
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: mist_dataset === 'nac_client_events'
+    disabled: false
+    groupId: classes
+    conf:
+      add:
+        - name: __ocsf
+          value: |-
+            Object.assign({}, __ocsf, {
+              category_uid: 3,
+              category_name: 'Identity & Access Management',
+              class_uid: 3002,
+              class_name: 'Authentication',
+              activity_id: __act_id,
+              activity_name: __act_id === 2 ? 'Logoff' : 'Logon',
+              type_uid: 300200 + __act_id,
+              status_id: __status_id,
+              status: ({'0':'Unknown','1':'Success','2':'Failure'})[String(__status_id)],
+              status_detail: type,
+              severity_id: __sev_id,
+              severity: ({'1':'Informational','2':'Low','3':'Medium','4':'High','5':'Critical'})[String(__sev_id)],
+              message: type,
+              logon_type: port_type || null,
+              auth_protocol: auth_type || null,
+              user: {
+                name: username || idp_username || mac || 'unknown',
+                uid: mac || null,
+                type_id: 1,
+                type: 'User'
+              },
+              service: { name: ssid || nas_vendor || 'Mist Access Assurance' },
+              src_endpoint: {
+                mac: mac || null,
+                svc_name: ssid || null,
+                vlan_uid: vlan ? String(vlan) : null
+              },
+              dst_endpoint: {
+                mac: bssid || device_mac || null,
+                hostname: ap || null
+              },
+              unmapped: Object.assign({}, __ocsf.unmapped, {
+                mist_event_type: type,
+                nacrule_id: nacrule_id,
+                nacrule_matched: nacrule_matched,
+                dryrun_nacrule_id: dryrun_nacrule_id,
+                dryrun_nacrule_matched: dryrun_nacrule_matched,
+                idp_id: idp_id,
+                idp_role: idp_role,
+                idp_username: idp_username,
+                resp_attrs: resp_attrs,
+                nas_vendor: nas_vendor,
+                vlan_source: vlan_source,
+                random_mac: random_mac,
+                usermac_label: usermac_label,
+                port_id: port_id,
+                port_type: port_type,
+                device_mac: device_mac,
+                mxedge_id: mxedge_id,
+                ap: ap
+              })
+            })
+      remove: []
+      keep: []
+
+  # ==========================================================================
+  # 3 - Emit
+  # ==========================================================================
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: emit
+    description: Target index for Splunk-bound events (blank var leaves it unset).
+    conf:
+      add:
+        - name: index
+          value: "C.vars['mist_splunk_index'] !== '' ? C.vars['mist_splunk_index'] : undefined"
+      remove: []
+      keep: []
+
+  - id: eval
+    filter: __ocsf && __ocsf.class_uid
+    disabled: false
+    groupId: emit
+    description: "Serialize the OCSF object. Uses eval + JSON.stringify rather
+      than the Serialize Function, because Serialize cannot read a nested object
+      out of a scratch field."
+    conf:
+      add:
+        - name: _raw
+          value: "JSON.stringify(__ocsf)"
+        - name: class_uid
+          value: "__ocsf.class_uid"
+        - name: sourcetype
+          value: "`ocsf:${String(__ocsf.class_name).toLowerCase().replace(/ /g, '_')}`"
+      remove: []
+      keep: []
+
+  # Safety net: a dataset with no OCSF class should still reach the destination
+  # as enriched JSON rather than disappearing. The Routes should never send one
+  # here, so this firing is a routing bug worth noticing.
+  - id: serialize
+    filter: "!(__ocsf && __ocsf.class_uid)"
+    disabled: false
+    groupId: emit
+    description: Fallback - no OCSF class for this dataset, emit the enriched
+      Mist record as JSON instead.
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_raw"
+        - "!__*"
+        - "!_*"
+        - "!cribl_*"
+        - "*"
+
+  - id: eval
+    filter: "true"
+    disabled: false
+    groupId: emit
+    description: Strict whitelist - drop the scratch fields and the original
+      Mist fields, keeping only _raw and routing metadata.
+    conf:
+      add: []
+      remove:
+        - "*"
+        - "__*"
+        - "_*"
+        - "cribl_*"
+      keep:
+        - _raw
+        - _time
+        - index
+        - host
+        - source
+        - sourcetype
+        - class_uid
+        # mist_dataset, mist_org_id, mist_site_id, mist_site_name,
+        # mist_device_type, mist_api_error
+        - mist_*

@@ -1,0 +1,56 @@
+[
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"acked\":false,\"aps\":[\"5c5b350e10030\"],\"bssids\":[\"38ff363c8c4c\"],\"component\":\"AP\",\"count\":2,\"group\":\"security\",\"id\":\"56bfa7af-b2db-43ee-a4c8-9b820bbba0e1\",\"last_seen\":1711031774,\"org_id\":\"b3b9f5e6-67b1-4112-9b4c-6824c565eaeb\",\"severity\":\"critical\",\"site_id\":\"441a1214-6928-442a-8e92-e1d34b8ec6a6\",\"ssids\":[\"MyHomeNetwork\"],\"status\":\"open\",\"timestamp\":1711031354,\"type\":\"rogue_ap\"}",
+    "acked": false,
+    "aps": [
+      "5c5b350e10030"
+    ],
+    "bssids": [
+      "38ff363c8c4c"
+    ],
+    "component": "AP",
+    "count": 2,
+    "group": "security",
+    "id": "56bfa7af-b2db-43ee-a4c8-9b820bbba0e1",
+    "last_seen": 1711031774,
+    "mist_dataset": "alarms",
+    "org_id": "b3b9f5e6-67b1-4112-9b4c-6824c565eaeb",
+    "severity": "critical",
+    "site_id": "441a1214-6928-442a-8e92-e1d34b8ec6a6",
+    "ssids": [
+      "MyHomeNetwork"
+    ],
+    "status": "open",
+    "timestamp": 1711031354,
+    "type": "rogue_ap"
+  },
+  {
+    "__packsource": "cribl-mist-rest-io.mist-api",
+    "_raw": "{\"ack_admin_id\":\"456b7016-a916-a4b1-78dd-72b947c152b7\",\"ack_admin_name\":\"Joe\",\"acked\":true,\"acked_time\":1711031352,\"component\":\"SW\",\"count\":1,\"group\":\"infrastructure\",\"hostnames\":[\"ME-DC-1-ACC-SW\"],\"id\":\"9d1c1f70-2ab1-4a63-8a0f-0f6b31b6f4aa\",\"last_seen\":1711030100,\"note\":\"Scheduled maintenance window\",\"org_id\":\"b3b9f5e6-67b1-4112-9b4c-6824c565eaeb\",\"resolved_time\":1711032900,\"severity\":\"warn\",\"site_id\":\"441a1214-6928-442a-8e92-e1d34b8ec6a6\",\"status\":\"resolved\",\"switches\":[\"ec3eb3000001\"],\"timestamp\":1711030100,\"type\":\"device_down\"}",
+    "ack_admin_id": "456b7016-a916-a4b1-78dd-72b947c152b7",
+    "ack_admin_name": "Joe",
+    "acked": true,
+    "acked_time": 1711031352,
+    "component": "SW",
+    "count": 1,
+    "group": "infrastructure",
+    "hostnames": [
+      "ME-DC-1-ACC-SW"
+    ],
+    "id": "9d1c1f70-2ab1-4a63-8a0f-0f6b31b6f4aa",
+    "last_seen": 1711030100,
+    "mist_dataset": "alarms",
+    "note": "Scheduled maintenance window",
+    "org_id": "b3b9f5e6-67b1-4112-9b4c-6824c565eaeb",
+    "resolved_time": 1711032900,
+    "severity": "warn",
+    "site_id": "441a1214-6928-442a-8e92-e1d34b8ec6a6",
+    "status": "resolved",
+    "switches": [
+      "ec3eb3000001"
+    ],
+    "timestamp": 1711030100,
+    "type": "device_down"
+  }
+]

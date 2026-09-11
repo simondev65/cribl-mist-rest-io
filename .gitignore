@@ -1,0 +1,11 @@
+# Generated cut/paste configs for manual Cribl UI testing.
+# Regenerate with: python3 tools/render-conf.py
+conf/
+
+# Build artifacts
+*.crbl
+
+# OS / editor cruft
+.DS_Store
+._*
+.vscode/
